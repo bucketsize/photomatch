@@ -1,9 +1,5 @@
 import time
 import os
-import glob
-import ssl
-import urllib.request
-import pprint
 import torch
 import numpy as np
 import pandas as pd
@@ -15,8 +11,8 @@ from torch_mtcnn import detect_faces
 from facenet_pytorch import MTCNN, InceptionResnetV1, extract_face
 from torch.utils.data import DataLoader
 from torchvision import datasets
-
 from face_store import FaceStore
+from face_utils import in_box, in_range, print_nice, get_image_files
 
 # from keras_vggface.utils import preprocess_input
 # from keras_vggface.vggface import VGGFace
@@ -25,23 +21,6 @@ from face_store import FaceStore
 workers = 0 if os.name == 'nt' else 4
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print('Running on device: {}'.format(device))
-
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
-
-def http_get_file(url, local_file_name):
-    if os.path.exists(local_file_name):
-        print("cachehit: %s", local_file_name)
-        return 
-    else:
-        with urllib.request.urlopen(url, context=ctx) as resource:
-            with open(local_file_name, 'wb') as f:
-                f.write(resource.read())
-
-pp = pprint.PrettyPrinter(width=41, compact=True)
-def print_nice(o):
-    pp.pprint(o)
 
 # lazy, eager
 def get_image(image_path):
@@ -109,14 +88,6 @@ def get_faces(image_inf, required_size=(224, 224)):
     print("faces [%s] = [%d]" % (name, len(faces_list)))
     return faces_list
 
-def in_range(r, i):
-    (x1, x2) = r
-    return (x1<=i and i<=x2) 
-
-def in_box(r, x, y):
-    (x1, y1, x2, y2) = r
-    return (x1<=x and x<=x2 and y1<=y and y<=y2)
-
 # eager
 def get_images(image_inf, rois, confidence=0.85, required_size=(224, 224)):
     iinfo,image,name = image_inf
@@ -152,9 +123,6 @@ def process(image_path, data=[]):
         # show_overlay(image_info, faces)
     else:
         print("duplicate [%s]" % (image_path))
-
-def get_image_files(base_dir):
-    return glob.iglob(base_dir+"/**/*.jpg", recursive=True)
 
 def main():
     data = []
