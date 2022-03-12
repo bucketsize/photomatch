@@ -16,6 +16,8 @@ from facenet_pytorch import MTCNN, InceptionResnetV1, extract_face
 from torch.utils.data import DataLoader
 from torchvision import datasets
 
+from face_store import FaceStore
+
 # from keras_vggface.utils import preprocess_input
 # from keras_vggface.vggface import VGGFace
 # from scipy.spatial.distance import cosine
@@ -84,7 +86,7 @@ vfint = np.vectorize(int)
         # >>> img_draw.save('annotated_faces.png')
 
 # lazy
-def get_faces_2(image_inf, required_size=(224, 224)):
+def get_faces(image_inf, required_size=(224, 224)):
     image,_,name = image_inf
     image_size,_ = required_size
     mtcnn = MTCNN(
@@ -106,12 +108,6 @@ def get_faces_2(image_inf, required_size=(224, 224)):
         })
     print("faces [%s] = [%d]" % (name, len(faces_list)))
     return faces_list
-
-def get_faces_1(image_inf, required_size=(224, 224)):
-    image,_,name = image_inf
-    bounding_boxes, landmarks = detect_faces(image)
-    print("faces [%s] = [%d]" % (name, len(bounding_boxes)))
-    return list(map(lambda x: {"box": [int(y) for y in x[:-1]], "confidence":x[4]}, bounding_boxes)) 
 
 def in_range(r, i):
     (x1, x2) = r
@@ -141,22 +137,21 @@ def get_images(image_inf, rois, confidence=0.85, required_size=(224, 224)):
 
     return images
 
+store = FaceStore()
 def process(image_path, data=[]):
-    print("started [%s]" % (image_path))
-    pt1=time.perf_counter()
-    
-    image_info = get_image(image_path)
-    faces = get_faces_2(image_info)
-    # print_nice(faces)
-    
-    images = get_images(image_info, faces)
-
-    pt2=time.perf_counter()
-
-    data.append({"image_path": image_path, "rois": faces})
-    print("processed [%s] in [%d]s" % (image_path, pt2-pt1))
-
-    # show_overlay(image_info, faces)
+    if len(store.find_image_path(image_path)) == 0:
+        pt1=time.perf_counter()
+        image_info = get_image(image_path)
+        faces = get_faces(image_info)
+        # print_nice(faces)
+        images = get_images(image_info, faces)
+        pt2=time.perf_counter()
+        print("processed [%s] in [%d]s" % (image_path, pt2-pt1))
+        #data.append({"image_path": image_path, "rois": faces})
+        store.save_face(image_path, faces)
+        # show_overlay(image_info, faces)
+    else:
+        print("duplicate [%s]" % (image_path))
 
 def get_image_files(base_dir):
     return glob.iglob(base_dir+"/**/*.jpg", recursive=True)

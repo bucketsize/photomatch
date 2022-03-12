@@ -7,7 +7,6 @@ numpy
 matplotlib
 
 # would have user tf / tflite mtcnn, but is not compat with rpi4 aarch64
-torch-mtcnn
 facenet-pytorch
 
 keras
