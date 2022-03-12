@@ -18,9 +18,6 @@ from face_utils import in_box, in_range, print_nice, get_image_files
 # from keras_vggface.vggface import VGGFace
 # from scipy.spatial.distance import cosine
 
-workers = 0 if os.name == 'nt' else 4
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-print('Running on device: {}'.format(device))
 
 # lazy, eager
 def get_image(image_path):
@@ -65,28 +62,6 @@ vfint = np.vectorize(int)
         # >>> img_draw.save('annotated_faces.png')
 
 # lazy
-def get_faces(image_inf, required_size=(224, 224)):
-    image,_,name = image_inf
-    image_size,_ = required_size
-    mtcnn = MTCNN(
-        image_size=image_size, margin=40, min_face_size=20,
-        select_largest=False,
-        thresholds=[0.6, 0.7, 0.7], factor=0.709, post_process=False,
-        device=device
-    )
-    boxes, probs, points = mtcnn.detect(image, landmarks=True)
-    faces_list = []
-    for i, (box, prob, point) in enumerate(zip(boxes, probs, points)):
-        ftensor = extract_face(
-            image, box,
-            save_path='/tmp/photomatch/face_{}_{}.png'.format(name.replace("/", "."), i))
-        faces_list.append({
-            "box": vfint(box),
-            "confidence": prob,
-            "ftensor": ftensor
-        })
-    print("faces [%s] = [%d]" % (name, len(faces_list)))
-    return faces_list
 
 # eager
 def get_images(image_inf, rois, confidence=0.85, required_size=(224, 224)):
@@ -108,26 +83,76 @@ def get_images(image_inf, rois, confidence=0.85, required_size=(224, 224)):
 
     return images
 
-store = FaceStore()
-def process(image_path, data=[]):
-    if len(store.find_image_path(image_path)) == 0:
-        pt1=time.perf_counter()
+class FaceUsurper:
+    def __init__(self, image_size=160):
+        self.workers = 0 if os.name == 'nt' else 4
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        print('Running on device: {}'.format(self.device))
+        self.mtcnn = MTCNN(
+            image_size=image_size, margin=40, min_face_size=20,
+            select_largest=False,
+            thresholds=[0.6, 0.7, 0.7], factor=0.709, post_process=False,
+            device=self.device
+        )
+        self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
+        self.store = FaceStore()
+        self.n_images = 0
+        self.n_faces = 0
+        self.n_face_ids = 0
+        self.faces = []
+
+    def get_faces(self, image_inf, required_size=(224, 224)):
+        image,_,name = image_inf
+        image_size,_ = required_size
+        boxes, probs, points = self.mtcnn.detect(image, landmarks=True)
+        faces_list = []
+        for i, (box, prob, point) in enumerate(zip(boxes, probs, points)):
+            ftensor = extract_face(
+                image, box,
+                save_path='/tmp/photomatch/face_{}_{}.png'.format(name.replace("/", "."), i))
+            faces_list.append({
+                "image_path": name,
+                "box": vfint(box),
+                "confidence": prob,
+                "tensor": ftensor
+            })
+        # print("faces [%s] = [%d]" % (name, len(faces_list)))
+        return faces_list
+
+    def match_faces(self):
+        print("match_faces started ...")
+        if len(self.faces) == 0:
+            print("expect non empty list of faces.tensor")
+            return None
+        aligned0 = list(map(lambda f: f["tensor"], self.faces))
+        aligned1 = torch.stack(aligned0).to(self.device)
+        embeddings = self.resnet(aligned1).detach().cpu()
+        print_nice(embeddings)
+
+    def extract_faces(self, image_path):
         image_info = get_image(image_path)
-        faces = get_faces(image_info)
-        # print_nice(faces)
-        images = get_images(image_info, faces)
-        pt2=time.perf_counter()
-        print("processed [%s] in [%d]s" % (image_path, pt2-pt1))
-        #data.append({"image_path": image_path, "rois": faces})
-        store.save_face(image_path, faces)
+        faces = self.get_faces(image_info)
+        self.faces += faces
+        # data.append({"image_path": image_path, "rois": faces})
         # show_overlay(image_info, faces)
-    else:
-        print("duplicate [%s]" % (image_path))
+        self.store.save_faces(image_path, faces)
+        self.n_face_ids += len(faces)
+
+    def process(self, image_path):
+        if len(self.store.find_image_path(image_path)) == 0:
+            pt1=time.perf_counter()
+            self.extract_faces(image_path)
+            pt2=time.perf_counter()
+            print("processed [%s] in [%d]s" % (image_path, pt2-pt1))
+        else:
+            print("duplicate [%s]" % (image_path))
+
+        self.n_images += 1
 
 def main():
-    data = []
+    fsup = FaceUsurper()
     for i in get_image_files("test"):
-         process(i, data=data)
-    print_nice(data)
+         fsup.process(i)
+    fsup.match_faces()
 
 main()

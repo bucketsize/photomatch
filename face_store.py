@@ -37,7 +37,7 @@ class FaceIter:
 
 class FaceStore:
     def __init__(self):
-        con = sqlite3.connect('.faces.db', detect_types=sqlite3.PARSE_DECLTYPES)
+        con = sqlite3.connect('/var/tmp/faces.db', detect_types=sqlite3.PARSE_DECLTYPES)
         cur = con.cursor()
         cur.execute('''CREATE TABLE if not exists faces
                (date text, image_path text, face_id text, face_box box)''')
@@ -56,7 +56,6 @@ class FaceStore:
             face_id = image_path + "_" + str(box)
             return (now, image_path, face_id, box)
         face_list = list(map(face_ent, faces))
-        print(face_list)
         cur.executemany("insert into faces values (?, ?, ?, ?)", face_list)
         con.commit()
         return 0
