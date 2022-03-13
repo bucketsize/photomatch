@@ -1,4 +1,5 @@
 import time
+import sys
 import os
 import torch
 import numpy as np
@@ -13,11 +14,10 @@ from torch.utils.data import DataLoader
 from torchvision import datasets
 from face_store import FaceStore
 from face_utils import in_box, in_range, print_nice, get_image_files
+import torch
 
-# from keras_vggface.utils import preprocess_input
-# from keras_vggface.vggface import VGGFace
-# from scipy.spatial.distance import cosine
-
+print("torch", torch.__version__)
+print("torch.vulkan", torch.is_vulkan_available())
 
 # lazy, eager
 def get_image(image_path):
@@ -26,7 +26,6 @@ def get_image(image_path):
 def show_image(image_path):
     plt.imshow(plt.imread(image_path))
 
-# eager
 def show_overlay(image, roi_boxes):
     plt.imshow(image)
     ax = plt.gca()
@@ -38,32 +37,8 @@ def show_overlay(image, roi_boxes):
         ax.add_patch(roi_border)
     plt.show()
 
-# def collate_fn(x):
-#     return x[0]
-
-# dataset = datasets.ImageFolder('../data/test_images')
-# dataset.idx_to_class = {i:c for c, i in dataset.class_to_idx.items()}
-# loader = DataLoader(dataset, collate_fn=collate_fn, num_workers=workers)
-
 vfint = np.vectorize(int)
 
-        # >>> from PIL import Image, ImageDraw
-        # >>> from facenet_pytorch import MTCNN, extract_face
-        # >>> mtcnn = MTCNN(keep_all=True)
-        # >>> boxes, probs, points = mtcnn.detect(img, landmarks=True)
-        # >>> # Draw boxes and save faces
-        # >>> img_draw = img.copy()
-        # >>> draw = ImageDraw.Draw(img_draw)
-        # >>> for i, (box, point) in enumerate(zip(boxes, points)):
-        # ...     draw.rectangle(box.tolist(), width=5)
-        # ...     for p in point:
-        # ...         draw.rectangle((p - 10).tolist() + (p + 10).tolist(), width=10)
-        # ...     extract_face(img, box, save_path='detected_face_{}.png'.format(i))
-        # >>> img_draw.save('annotated_faces.png')
-
-# lazy
-
-# eager
 def get_images(image_inf, rois, confidence=0.85, required_size=(224, 224)):
     iinfo,image,name = image_inf
     images = []
@@ -88,14 +63,19 @@ class FaceUsurper:
         self.workers = 0 if os.name == 'nt' else 4
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         print('Running on device: {}'.format(self.device))
+
+        # :default:
+        # image_size=160, margin=0, min_face_size=20,
+        # thresholds=[0.6, 0.7, 0.7], factor=0.709, post_process=True,
+        # select_largest=True, selection_method=None, keep_all=False, device=None
         self.mtcnn = MTCNN(
-            image_size=image_size, margin=40, min_face_size=20,
-            select_largest=False,
-            thresholds=[0.6, 0.7, 0.7], factor=0.709, post_process=False,
             device=self.device
         )
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
-        self.store = FaceStore("/var/tmp/faces1.db")
+        if len(sys.argv) < 2:
+            raise "invalid arg; expect 1 (db_f)"
+        self.db_f = sys.argv[1]
+        self.store = FaceStore(self.db_f)
         self.embeddings = []
         self.faces = []
         self.matches = []
@@ -106,7 +86,10 @@ class FaceUsurper:
         boxes, probs, points = self.mtcnn.detect(image, landmarks=True)
         faces_list = []
         for i, (box, prob, point) in enumerate(zip(boxes, probs, points)):
-            face_path = "/var/tmp/photomatch/face_{}_{}.png".format(name.replace("/", "."), i)
+            face_path = "/var/tmp/{}/face_{}_{}.png".format(
+                self.db_f.replace("/", "_"),
+                name.replace("/", "_"),
+                i)
             ftensor = extract_face(
                 image, box,
                 save_path=face_path)

@@ -104,6 +104,11 @@ class FaceStore:
         result = cur.fetchall()
         return result
 
+    def find_matches(self, dist_max=0.3):
+        con, cur = self.store
+        cur.execute("select * from matches where confidence < %f" % dist_max)
+        return FaceIter(cur)
+
 def test():
     store = FaceStore()
     status = store.save_faces("/var/foo/121.jpg", [[42,22,33,15], [56,40,32,21]])
