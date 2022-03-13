@@ -108,12 +108,11 @@ class FaceUsurper:
         for i, ei in enumerate(es):
             for j, ej in enumerate(self.embeddings):
                 score = (ei - ej).norm().item()
-                if 0 < score and score < 0.3:
-                    # print("> ", (i,j)," / ", len(self.faces), len(self.embeddings))
-                    s = faces[i]
-                    t = self.faces[j]
-                    match_list.append((s["face_path"], t["face_path"], score))
-        print("matched c ~ (0, 0.3) = [%d]" % len(match_list))            
+                # print("> ", (i,j)," / ", len(self.faces), len(self.embeddings))
+                s = faces[i]
+                t = self.faces[j]
+                match_list.append((s["face_path"], t["face_path"], score))
+        print("matched = [%d]" % len(match_list))            
         return match_list
 
     def match_faces(self, faces):
