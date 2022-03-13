@@ -95,11 +95,10 @@ class FaceUsurper:
             device=self.device
         )
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
-        self.store = FaceStore()
-        self.n_images = 0
-        self.n_faces = 0
-        self.n_face_ids = 0
+        self.store = FaceStore("/var/tmp/faces1.db")
+        self.embeddings = []
         self.faces = []
+        self.matches = []
 
     def get_faces(self, image_inf, required_size=(224, 224)):
         image,_,name = image_inf
@@ -107,11 +106,13 @@ class FaceUsurper:
         boxes, probs, points = self.mtcnn.detect(image, landmarks=True)
         faces_list = []
         for i, (box, prob, point) in enumerate(zip(boxes, probs, points)):
+            face_path = "/var/tmp/photomatch/face_{}_{}.png".format(name.replace("/", "."), i)
             ftensor = extract_face(
                 image, box,
-                save_path='/tmp/photomatch/face_{}_{}.png'.format(name.replace("/", "."), i))
+                save_path=face_path)
             faces_list.append({
                 "image_path": name,
+                "face_path": face_path,
                 "box": vfint(box),
                 "confidence": prob,
                 "tensor": ftensor
@@ -119,40 +120,73 @@ class FaceUsurper:
         # print("faces [%s] = [%d]" % (name, len(faces_list)))
         return faces_list
 
-    def match_faces(self):
+    def compare_matches(self, faces, es):
+        match_list = []
+        for i, ei in enumerate(es):
+            for j, ej in enumerate(self.embeddings):
+                score = (ei - ej).norm().item()
+                if 0 < score and score < 0.3:
+                    # print("> ", (i,j)," / ", len(self.faces), len(self.embeddings))
+                    s = faces[i]
+                    t = self.faces[j]
+                    match_list.append((s["face_path"], t["face_path"], score))
+        print("matched c ~ (0, 0.3) = [%d]" % len(match_list))            
+        return match_list
+
+    def match_faces(self, faces):
         print("match_faces started ...")
-        if len(self.faces) == 0:
+        if len(faces) == 0:
             print("expect non empty list of faces.tensor")
-            return None
-        aligned0 = list(map(lambda f: f["tensor"], self.faces))
+            return [] 
+        aligned0 = list(map(lambda f: f["tensor"], faces))
         aligned1 = torch.stack(aligned0).to(self.device)
         embeddings = self.resnet(aligned1).detach().cpu()
-        print_nice(embeddings)
+        return embeddings
 
     def extract_faces(self, image_path):
         image_info = get_image(image_path)
         faces = self.get_faces(image_info)
-        self.faces += faces
-        # data.append({"image_path": image_path, "rois": faces})
-        # show_overlay(image_info, faces)
-        self.store.save_faces(image_path, faces)
-        self.n_face_ids += len(faces)
+        return faces
 
     def process(self, image_path):
+        print("started [%s]" % image_path)
         if len(self.store.find_image_path(image_path)) == 0:
-            pt1=time.perf_counter()
-            self.extract_faces(image_path)
-            pt2=time.perf_counter()
-            print("processed [%s] in [%d]s" % (image_path, pt2-pt1))
+            faces = self.extract_faces(image_path)
+            print("detected = [%d] " % len(faces))
+            return faces
         else:
-            print("duplicate [%s]" % (image_path))
+            print("duplicate")
+            return []
 
-        self.n_images += 1
+    def update(self, faces=[], embeddings=[], matches=[], r_matches=[]):
+        if len(faces) > 0:
+            self.faces += faces
+            self.store.save_faces(faces)
+        if len(embeddings) > 0:
+            self.embeddings += embeddings
+        if len(matches) > 0:
+            self.matches += matches
+            self.store.save_matches(matches)
+           
+    def stats(self):
+        return {
+            "faces": len(self.faces),
+            "embeddings": len(self.embeddings),
+            "matches": len(self.matches)
+        }
 
 def main():
     fsup = FaceUsurper()
-    for i in get_image_files("test"):
-         fsup.process(i)
-    fsup.match_faces()
+    for image_path in get_image_files("test"):
+        faces = fsup.process(image_path)
+        fsup.update(faces=faces)
+
+        ems = fsup.match_faces(faces)
+        fsup.update(embeddings=ems)
+       
+        cms = fsup.compare_matches(faces, ems)
+        fsup.update(matches=cms)
+        
+    print_nice(fsup.stats())
 
 main()

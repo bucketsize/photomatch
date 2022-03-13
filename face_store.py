@@ -1,17 +1,28 @@
 import sqlite3
 from datetime import datetime as dt
+from functools import reduce
 
 class Box:
     def __init__(self, box):
         self.box = box
 
     def __repr__(self):
-        x1,y1,x2,y2 = self.box
-        return "Box[%d,%d,%d,%d]" % (x1,y1,x2,y2)
+        bs = join(";", self.box) 
+        return "Box[%s]" % bs
+
+
+def join(sep, ls):
+    s = ""
+    for i in ls:
+        if s == "":
+            s = s+str(i)
+        else:
+            s = s+sep+str(i)
+    return s        
 
 def box_adapter(box):
-    x1,y1,x2,y2 = box.box
-    return ("%d;%d;%d;%d" % (x1,y1,x2,y2)).encode('ascii')
+    s = join(";", box.box) 
+    return s.encode('ascii')
 
 def box_converter(s):
     box = list(map(int, s.split(b";")))
@@ -36,27 +47,49 @@ class FaceIter:
         return r 
 
 class FaceStore:
-    def __init__(self):
-        con = sqlite3.connect('/var/tmp/faces.db', detect_types=sqlite3.PARSE_DECLTYPES)
+    def __init__(self, db_file=":memory:"):
+        con = sqlite3.connect(db_file, detect_types=sqlite3.PARSE_DECLTYPES)
         cur = con.cursor()
-        cur.execute('''CREATE TABLE if not exists faces
-               (date text, image_path text, face_id text, face_box box)''')
+        cur.execute('''
+            CREATE TABLE if not exists faces (
+                        date text,
+                        image_path text,
+                        face_path text,
+                        confidence real,
+                        face_box box
+            )
+        ''')
+            
+        cur.execute('''
+            CREATE TABLE if not exists matches (
+                        face_path_1 text,
+                        face_path_2 text,
+                        confidence real
+            )
+        ''')
         con.commit()
         self.store = (con, cur)
 
-    def save_faces(self, image_path, faces):
-        con, cur = self.store
-        cur.execute("select date from faces where image_path = '%s'" % image_path)
-        result = cur.fetchall()
-        if len(result) > 0:
-            return 1
+    def face_row(self, face):
+        box = Box(face["box"])
         now = dt.now().strftime("%Y-%m-%dT%H:%M:%S")
-        def face_ent(face):
-            box = Box(face["box"])
-            face_id = image_path + "_" + str(box)
-            return (now, image_path, face_id, box)
-        face_list = list(map(face_ent, faces))
-        cur.executemany("insert into faces values (?, ?, ?, ?)", face_list)
+        face_id = face["face_path"]
+        return (now, face["image_path"], face_id, face["confidence"], box)
+
+    def match_row(self, match):
+        return match
+
+    def save_faces(self, faces):
+        con, cur = self.store
+        f_list = list(map(self.face_row, faces))
+        cur.executemany("insert into faces values (?, ?, ?, ?, ?)", f_list)
+        con.commit()
+        return 0
+
+    def save_matches(self, matches):
+        con, cur = self.store
+        m_list = list(map(self.match_row, matches))
+        cur.executemany("insert into matches values (?, ?, ?)", m_list)
         con.commit()
         return 0
 

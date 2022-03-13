@@ -1,13 +1,7 @@
 # pip install -r requirements.txt
  
-
 # uninstall system numpy
 numpy
-
 matplotlib
-
-# would have user tf / tflite mtcnn, but is not compat with rpi4 aarch64
 facenet-pytorch
 
-keras
-keras_vggface
