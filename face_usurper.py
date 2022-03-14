@@ -2,6 +2,8 @@ import time
 import sys
 import os
 import torch
+from torch import nn
+from torch import linalg as LA
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -59,7 +61,11 @@ def get_images(image_inf, rois, confidence=0.85, required_size=(224, 224)):
     return images
 
 class FaceUsurper:
-    def __init__(self, image_size=160):
+    def get_uid(self):
+        self.count += 1
+        return "%05d" % self.count
+
+    def __init__(self, db_f, images_path, image_size=160):
         self.workers = 0 if os.name == 'nt' else 4
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         print('Running on device: {}'.format(self.device))
@@ -69,76 +75,76 @@ class FaceUsurper:
         # thresholds=[0.6, 0.7, 0.7], factor=0.709, post_process=True,
         # select_largest=True, selection_method=None, keep_all=False, device=None
         self.mtcnn = MTCNN(
+            margin=20,
             device=self.device
         )
         self.resnet = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
-        if len(sys.argv) < 2:
-            raise "invalid arg; expect 1 (db_f)"
-        self.db_f = sys.argv[1]
+        # rpi4 out of mem
+        # self.resnet = InceptionResnetV1(pretrained='casia-webface').eval().to(self.device)
+        self.db_f = db_f 
+        self.image_path = images_path
         self.store = FaceStore(self.db_f)
+        self.face_size = (160, 160)
         self.embeddings = []
         self.faces = []
         self.matches = []
+        self.count = 0
 
-    def get_faces(self, image_inf, required_size=(224, 224)):
-        image,_,name = image_inf
-        image_size,_ = required_size
+    def __extract_faces(self, image_inf):
+        image,_,image_path = image_inf
         boxes, probs, points = self.mtcnn.detect(image, landmarks=True)
-        faces_list = []
-        for i, (box, prob, point) in enumerate(zip(boxes, probs, points)):
-            face_path = "/var/tmp/{}/face_{}_{}.png".format(
+        print("detected:", len(boxes))
+        def f_path():
+            return "/var/tmp/{}/F{}.png".format(
                 self.db_f.replace("/", "_"),
-                name.replace("/", "_"),
-                i)
-            ftensor = extract_face(
-                image, box,
-                save_path=face_path)
-            faces_list.append({
-                "image_path": name,
-                "face_path": face_path,
-                "box": vfint(box),
-                "confidence": prob,
-                "tensor": ftensor
-            })
-        # print("faces [%s] = [%d]" % (name, len(faces_list)))
-        return faces_list
+                self.get_uid())   
+        def f_norm(image_tensor):
+            processed_tensor = (image_tensor - 127.5) / 128.0
+            return processed_tensor
+        face_paths = [f_path() for i in probs]
+        fts = [f_norm(extract_face(image, box, save_path=face_path))
+                   for (box, face_path) in list(zip(boxes, face_paths))]
+        print("extracted: ", len(fts), fts[0].shape)
+        image_paths= [image_path  for i in probs ]
+        return (image_paths, face_paths, vfint(boxes), probs, fts)
+    
+    #torch.Size([512])
+    def dist(self, e1, e2):
+        # cos = nn.CosineSimilarity(dim=0, eps=1e-6)
+        # d = cos(e1, e2).item()
+        # d = LA.norm(e1-e2).item()
+        d = (e1 - e2).norm().item()
+        return d
 
     def compare_matches(self, faces, es):
         match_list = []
         for i, ei in enumerate(es):
             for j, ej in enumerate(self.embeddings):
-                score = (ei - ej).norm().item()
-                # print("> ", (i,j)," / ", len(self.faces), len(self.embeddings))
                 s = faces[i]
                 t = self.faces[j]
-                match_list.append((s["face_path"], t["face_path"], score))
+                score = self.dist(ei, ej)
+                m = (s[1], t[1], score)
+                match_list.append(m)
+                print("match = ", m)
         print("matched = [%d]" % len(match_list))            
         return match_list
 
-    def match_faces(self, faces):
+    def cnnid_faces(self, fts):
         print("match_faces started ...")
-        if len(faces) == 0:
-            print("expect non empty list of faces.tensor")
-            return [] 
-        aligned0 = list(map(lambda f: f["tensor"], faces))
-        aligned1 = torch.stack(aligned0).to(self.device)
-        embeddings = self.resnet(aligned1).detach().cpu()
-        return embeddings
+        afts = torch.stack(fts).to(self.device)
+        embedds = self.resnet(afts).detach().cpu()
+        print("cnnid = ", embedds.shape)
+        return embedds
 
     def extract_faces(self, image_path):
-        image_info = get_image(image_path)
-        faces = self.get_faces(image_info)
-        return faces
-
-    def process(self, image_path):
         print("started [%s]" % image_path)
         if len(self.store.find_image_path(image_path)) == 0:
-            faces = self.extract_faces(image_path)
-            print("detected = [%d] " % len(faces))
+            image_info = get_image(image_path)
+            faces = self.__extract_faces(image_info)
             return faces
         else:
             print("duplicate")
-            return []
+            return () # FIXME
 
     def update(self, faces=[], embeddings=[], matches=[], r_matches=[]):
         if len(faces) > 0:
@@ -151,24 +157,27 @@ class FaceUsurper:
             self.store.save_matches(matches)
            
     def stats(self):
-        return {
-            "faces": len(self.faces),
-            "embeddings": len(self.embeddings),
-            "matches": len(self.matches)
-        }
+        return (len(self.faces),len(self.embeddings),len(self.matches),self.db_f)
 
 def main():
-    fsup = FaceUsurper()
-    for image_path in get_image_files("test"):
-        faces = fsup.process(image_path)
+    if len(sys.argv) < 3:
+        raise "expect 2 params db_f, images_path"
+    db_f, images_path = sys.argv[1], sys.argv[2]
+    fsup = FaceUsurper(db_f, images_path)
+    for image_path in get_image_files(images_path):
+        i,f,b,c,t = fsup.extract_faces(image_path)
+        faces = list(zip(i,f,b,c,t))
         fsup.update(faces=faces)
 
-        ems = fsup.match_faces(faces)
-        fsup.update(embeddings=ems)
-       
+        ems = fsup.cnnid_faces(t)
+        if len(fsup.embeddings) < 1:
+            fsup.update(embeddings=ems)
+            continue
+      
         cms = fsup.compare_matches(faces, ems)
         fsup.update(matches=cms)
-        
+        fsup.update(embeddings=ems)
+    
     print_nice(fsup.stats())
 
 main()

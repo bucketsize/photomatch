@@ -71,10 +71,9 @@ class FaceStore:
         self.store = (con, cur)
 
     def face_row(self, face):
-        box = Box(face["box"])
+        box = Box(face[2])
         now = dt.now().strftime("%Y-%m-%dT%H:%M:%S")
-        face_id = face["face_path"]
-        return (now, face["image_path"], face_id, face["confidence"], box)
+        return (now, face[0], face[1], face[3], box)
 
     def match_row(self, match):
         return match
