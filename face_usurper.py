@@ -2,18 +2,13 @@ import time
 import sys
 import os
 import torch
+import numpy as np
+from PIL import Image
+from matplotlib import pyplot as plt
 from torch import nn
 from torch import linalg as LA
-import numpy as np
-import pandas as pd
-from matplotlib import pyplot as plt
-from matplotlib.patches import Rectangle
-from numpy import asarray
-from PIL import Image
 from torch_mtcnn import detect_faces
 from facenet_pytorch import MTCNN, InceptionResnetV1, extract_face
-from torch.utils.data import DataLoader
-from torchvision import datasets
 from face_store import FaceStore
 from face_utils import in_box, in_range, print_nice, get_image_files
 import torch
@@ -25,40 +20,7 @@ print("torch.vulkan", torch.is_vulkan_available())
 def get_image(image_path):
     return (Image.open(image_path), plt.imread(image_path), image_path)
 
-def show_image(image_path):
-    plt.imshow(plt.imread(image_path))
-
-def show_overlay(image, roi_boxes):
-    plt.imshow(image)
-    ax = plt.gca()
-
-    for roi in roi_boxes:
-        x1, y1, x2, y2 = roi["box"]
-        roi_border = Rectangle((x1, y1), x2-x1, y2-y1,
-                            fill=False, color='red')
-        ax.add_patch(roi_border)
-    plt.show()
-
 vfint = np.vectorize(int)
-
-def get_images(image_inf, rois, confidence=0.85, required_size=(224, 224)):
-    iinfo,image,name = image_inf
-    images = []
-
-    for roi in rois:
-        x1, y1, x2, y2 = roi["box"] 
-        # print("roi: ", x1, y1, x2, y2)
-        c = roi["confidence"]
-        w, h = iinfo.size
-        if in_box((0,0,w,h), x1, y1) and in_box((0,0,w,h), x2, y2): 
-            bb = image[y1:y2, x1:x2]
-            img = Image.fromarray(bb).resize(required_size)
-            img_array = asarray(img)
-            images.append(img_array)
-        else:
-            print("drop invalid roi [%s]" % (name), roi["box"])
-
-    return images
 
 class FaceUsurper:
     def get_uid(self):
@@ -91,6 +53,9 @@ class FaceUsurper:
         self.count = 0
 
     def __extract_faces(self, image_inf):
+        """
+        returns (image_path, face_path, box, confidence, tensor)
+        """
         image,_,image_path = image_inf
         boxes, probs, points = self.mtcnn.detect(image, landmarks=True)
         print("detected:", len(boxes))
@@ -130,7 +95,7 @@ class FaceUsurper:
         return match_list
 
     def cnnid_faces(self, fts):
-        print("match_faces started ...")
+        print("cnnid_faces started ...")
         afts = torch.stack(fts).to(self.device)
         embedds = self.resnet(afts).detach().cpu()
         print("cnnid = ", embedds.shape)
@@ -146,15 +111,10 @@ class FaceUsurper:
             print("duplicate")
             return () # FIXME
 
-    def update(self, faces=[], embeddings=[], matches=[], r_matches=[]):
-        if len(faces) > 0:
+    def update(self, faces=[], embeddings=[]):
             self.faces += faces
-            self.store.save_faces(faces)
-        if len(embeddings) > 0:
             self.embeddings += embeddings
-        if len(matches) > 0:
-            self.matches += matches
-            self.store.save_matches(matches)
+            self.store.save_faces(faces, embeddings)
            
     def stats(self):
         return (len(self.faces),len(self.embeddings),len(self.matches),self.db_f)
@@ -167,16 +127,13 @@ def main():
     for image_path in get_image_files(images_path):
         i,f,b,c,t = fsup.extract_faces(image_path)
         faces = list(zip(i,f,b,c,t))
-        fsup.update(faces=faces)
-
-        ems = fsup.cnnid_faces(t)
-        if len(fsup.embeddings) < 1:
-            fsup.update(embeddings=ems)
-            continue
+        embds = fsup.cnnid_faces(t)
+        fsup.update(faces=faces, embeddings=embds)
       
-        cms = fsup.compare_matches(faces, ems)
-        fsup.update(matches=cms)
-        fsup.update(embeddings=ems)
+        # TODO: move to clustering
+        # comps = fsup.compare_matches(faces, embds)
+        # fsup.update(matches=comps)
+        # fsup.update(embeddings=ems)
     
     print_nice(fsup.stats())
 
