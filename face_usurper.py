@@ -70,8 +70,7 @@ class FaceUsurper:
         fts = [f_norm(extract_face(image, box, save_path=face_path))
                    for (box, face_path) in list(zip(boxes, face_paths))]
         print("extracted: ", len(fts), fts[0].shape)
-        image_paths= [image_path  for i in probs ]
-        return (image_paths, face_paths, vfint(boxes), probs, fts)
+        return (face_paths, vfint(boxes), probs, fts)
     
     #torch.Size([512])
     def dist(self, e1, e2):
@@ -109,15 +108,14 @@ class FaceUsurper:
             return faces
         else:
             print("duplicate")
-            return () # FIXME
+            return (None,None,None,None)
 
-    def update(self, faces=[], embeddings=[]):
-            self.faces += faces
-            self.embeddings += embeddings
-            self.store.save_faces(faces, embeddings)
+    def update(self, faces=(None, [], [])):
+        if faces[0] is not None:
+            self.store.save_faces(faces)
            
     def stats(self):
-        return (len(self.faces),len(self.embeddings),len(self.matches),self.db_f)
+        return ()
 
 def main():
     if len(sys.argv) < 3:
@@ -125,10 +123,12 @@ def main():
     db_f, images_path = sys.argv[1], sys.argv[2]
     fsup = FaceUsurper(db_f, images_path)
     for image_path in get_image_files(images_path):
-        i,f,b,c,t = fsup.extract_faces(image_path)
-        faces = list(zip(i,f,b,c,t))
+        f,b,c,t = fsup.extract_faces(image_path)
+        if f == None:
+            continue
+        faces = list(zip(f,b,c,t))
         embds = fsup.cnnid_faces(t)
-        fsup.update(faces=faces, embeddings=embds)
+        fsup.update(faces=(image_path, faces, embds))
       
         # TODO: move to clustering
         # comps = fsup.compare_matches(faces, embds)
