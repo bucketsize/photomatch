@@ -80,7 +80,7 @@ class FaceStore:
         self.cur.execute("insert into images values (?, ?, ?, ?, ?)", image)
         for fi, ti in list(zip(fs, es)):
             face_id = self.next_idx()
-            face = (face_id, image_id, fi[0], float(fi[2]), fi[1], ti)
+            face = (face_id, image_id, fi[0], float(fi[2]), tensor(fi[1]), ti)
             # print(face)
             self.cur.execute("insert into faces values (?, ?, ?, ?, ?, ?)", face)
         self.con.commit()

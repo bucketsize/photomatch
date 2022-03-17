@@ -72,13 +72,6 @@ class FaceUsurper:
         print("extracted: ", len(fts), fts[0].shape)
         return (face_paths, vfint(boxes), probs, fts)
     
-    #torch.Size([512])
-    def dist(self, e1, e2):
-        # cos = nn.CosineSimilarity(dim=0, eps=1e-6)
-        # d = cos(e1, e2).item()
-        # d = LA.norm(e1-e2).item()
-        d = (e1 - e2).norm().item()
-        return d
 
     def compare_matches(self, faces, es):
         match_list = []
