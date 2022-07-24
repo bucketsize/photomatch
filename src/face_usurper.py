@@ -16,7 +16,7 @@ import torch
 print("torch", torch.__version__)
 print("torch.vulkan", torch.is_vulkan_available())
 
-# lazy, eager
+# lazy
 def get_image(image_path):
     return (Image.open(image_path), plt.imread(image_path), image_path)
 

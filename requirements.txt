@@ -2,6 +2,11 @@
  
 # uninstall system numpy
 numpy
-matplotlib
+torch 
+torchvision
+torch_mtcnn
 facenet-pytorch
+opencv-contrib-python
+matplotlib
+sklearn
 

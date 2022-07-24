@@ -3,8 +3,10 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from sklearn.cluster import KMeans, MeanShift
+from sklearn.cluster import KMeans
 from sklearn.cluster import AffinityPropagation
+from sklearn.cluster import Birch 
+from sklearn.mixture import GaussianMixture
 from sklearn import metrics
 import matplotlib.pyplot as plt
 from itertools import cycle
@@ -38,7 +40,7 @@ def cluster_distmean(data, dist=0.5):
                 s.append((i, j, d))
     s.sort(key=lambda x:x[2])
     c, r = {}, []
-    for i in Range(0, len(data)):
+    for i in range(0, len(data)):
         c[i] = [i]
     for i, j, d in s:
         if (j not in r):
@@ -55,19 +57,10 @@ def cluster_distmean(data, dist=0.5):
     print(len(index.values()))
     return ("distmean-"+str(dist) , len(c), index.values())
 
-def cluster_AF(data, damping=0.5, preference=None):
-    af = AffinityPropagation(damping=damping, preference=preference)
-    af.fit(data)
-    labels = af.labels_
-    n_clusters_ = len(af.cluster_centers_indices_)
-    return ("AF-"+str(damping)+"-"+str(preference), n_clusters_, labels)
-
-def cluster_MS(data, bandwidth=None):
-    af = MeanShift(bandwidth=bandwidth)
-    af.fit(data)
-    labels = af.labels_
-    n_clusters_ = 100
-    return ("MS-"+str(bandwidth), n_clusters_, labels)
+def cluster_using(tag, model, data):
+    model.fit(data)
+    clsts = model.predict(data)
+    return (tag, len(clsts), clsts)
 
 def adj_list(labels, fps):
     c = {}
@@ -81,6 +74,7 @@ def print_html(html_f, tag, c):
     f = open(html_f+"_"+tag+".html", "w")
     for k, v in c.items():
         f.write("<div class='cluster'>")
+        f.write("<div class='label'><span>%s</span><br/></div>" % k)
         for i in v:
             f.write("<img src='%s'/>" % i)
         f.write("</div></br></br>")
@@ -89,18 +83,18 @@ def print_html(html_f, tag, c):
 def main():
     if len(sys.argv) < 4:
         raise "invalid args; 3 expected"
-    db_f, html_f, max_d = sys.argv[1], sys.argv[2], float(sys.argv[3])
+    db_f, html_f, max_d, n_clusters = sys.argv[1],sys.argv[2],float(sys.argv[3]), int(sys.argv[4])
     (_, L, X) = load_data(db_f)
     for tag, n, ls in [
-            cluster_AF(X),
-            cluster_MS(X),
-            cluster_distmean(X, 0.5),
-            cluster_distmean(X, 0.6),
-            cluster_distmean(X, 0.7)
+            cluster_using("AffPr", AffinityPropagation(damping=0.57), X),
+            cluster_using("BIRCH", Birch(threshold=0.01, n_clusters=n_clusters), X),
+            cluster_using("KMeans", KMeans(n_clusters=n_clusters), X),
+            cluster_using("GaussM",GaussianMixture(n_components=n_clusters), X),
     ]:
         print(tag, n, ls)
         c = adj_list(ls, L)
         print_html(html_f, tag, c)
+
 main()
     # -- plot --
     # plt.close("all")
