@@ -1,69 +1,86 @@
-# import the necessary packages
+# https://pyimagesearch.com/2021/07/26/pytorch-image-classification-with-pre-trained-networks/#download-the-code
+
+import sys
+import os
 import torch
-# specify image dimension
+import numpy as np
+import torch
+from torchvision import models
+from torchvision.models import VGG16_Weights
+from torchvision.models import ResNet50_Weights
+from torchvision.models import Inception_V3_Weights
+from torchvision.models import DenseNet121_Weights 
+import cv2
+from face_utils import get_image_files
+from img_store import ImgStore
+
 IMAGE_SIZE = 224
-# specify ImageNet mean and standard deviation
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
-# specify path to the ImageNet labels
 IN_LABELS = "ilsvrc2012_wordnet_lemmas.txt"
-
-# import the necessary packages
-from pyimagesearch import config
-from torchvision import models
-import numpy as np
-import argparse
-import torch
-import cv2
-
-
 MODELS = {
-	"vgg16": models.vgg16(pretrained=True),
-	"vgg19": models.vgg19(pretrained=True),
-	"inception": models.inception_v3(pretrained=True),
-	"densenet": models.densenet121(pretrained=True),
-	"resnet": models.resnet50(pretrained=True)
+	"vgg16": models.vgg16(weights=VGG16_Weights.IMAGENET1K_V1),
+	# "vgg19": models.vgg19(pretrained=True),
+	"inception": models.inception_v3(weights=Inception_V3_Weights.IMAGENET1K_V1),
+	"densenet": models.densenet121(weights=DenseNet121_Weights.IMAGENET1K_V1),
+	"resnet": models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
 }
 class ImageClassen:
-    def __init__(self):
+    def __init__(self, pt_model, db_f):
         self.workers = 0 if os.name == 'nt' else 4
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        print('Running on device: {}'.format(self.device))
-        self.model = MODELS["vgg16"].eval().to(self.device)
+        print('ii running on device: {}'.format(self.device))
+        self.model = pt_model.eval().to(self.device)
         self.imagenet_tags = dict(enumerate(open(IN_LABELS)))
+        self.store = ImgStore(db_f)
 
     def preprocess_image(self, image):
         # swap the color channels from BGR to RGB, resize it, and scale
         # the pixel values to [0, 1] range
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, (config.IMAGE_SIZE, config.IMAGE_SIZE))
+        image = cv2.resize(image, (IMAGE_SIZE, IMAGE_SIZE))
         image = image.astype("float32") / 255.0
         # subtract ImageNet mean, divide by ImageNet standard deviation,
         # set "channels first" ordering, and add a batch dimension
-        image -= config.MEAN
-        image /= config.STD
+        image -= MEAN
+        image /= STD
         image = np.transpose(image, (2, 0, 1))
         image = np.expand_dims(image, 0)
         # return the preprocessed image
         return image
 
     def load_image(self, image_path):
-        print("loading image %" % image_path)
+        print("ii loading image %s" % image_path)
         image = cv2.imread(image_path)
         orig = image.copy()
-        image = preprocess_image(image)
+        image = self.preprocess_image(image)
         # convert the preprocessed image to a torch tensor and flash it to
         # the current device
         image = torch.from_numpy(image)
         image = image.to(self.device)
+        return image
 
     def classify(self, image_path):
-        logits = self.model(load_image(image_path))
-        probabilities = torch.nn.Softmax(dim=-1)(logits)
-        sortedProba = torch.argsort(probabilities, dim=-1, descending=True)
-        # loop over the predictions and display the rank-5 predictions and
-        # corresponding probabilities to our terminal
-        for (i, idx) in enumerate(sortedProba[0, :5]):
-            print("{}. {}: {:.2f}%".format
-                (i, imagenetLabels[idx.item()].strip(),
-                probabilities[0, idx.item()] * 100))
+        logits = self.model(self.load_image(image_path))
+        classs = torch.nn.Softmax(dim=-1)(logits)
+        sclass = torch.argsort(classs, dim=-1, descending=True)
+        for (i, idx) in enumerate(sclass[0, :2]):
+            print("ii {}. {}: {:.2f}%".format
+                (i, self.imagenet_tags[idx.item()].strip(),
+                classs[0, idx.item()] * 100))
+            if i == 0:
+                self.store.save_image(
+                     ( image_path
+                     , idx.item()
+                     , self.imagenet_tags[idx.item()].strip())
+                )
+
+def main():
+    if len(sys.argv) < 4:
+        raise "expect model image_path db_f"
+    pm = MODELS[sys.argv[1]]
+    cn = ImageClassen(pm, sys.argv[3])
+    for image_path in get_image_files(sys.argv[2]):
+        cn.classify(image_path)
+
+main()

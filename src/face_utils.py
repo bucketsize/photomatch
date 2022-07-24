@@ -34,8 +34,11 @@ def http_get_file(url, local_file_name):
                 f.write(resource.read())
 
 def get_image_files(base_dir):
-    return glob.iglob(base_dir+"/**/*.jpg", recursive=True)
-
+    for i in glob.iglob(base_dir+"/**/*.[jJ][pP][gG]", recursive=True):
+        yield i
+    for i in glob.iglob(base_dir+"/**/*.[jJ][pP][eE][gG]", recursive=True):
+        yield i
+    
 def in_range(r, i):
     (x1, x2) = r
     return (x1<=i and i<=x2) 
