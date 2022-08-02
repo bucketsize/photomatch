@@ -100,7 +100,7 @@ class FaceUsurper:
             faces = self.__extract_faces(image_info)
             return faces
         else:
-            print("duplicate")
+            print("duplicate "+image_path)
             return (None,None,None,None)
 
     def update(self, faces=(None, [], [])):

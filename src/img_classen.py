@@ -2,15 +2,14 @@
 
 import sys
 import os
-import torch
 import numpy as np
+import cv2
 import torch
 from torchvision import models
 from torchvision.models import VGG16_Weights
 from torchvision.models import ResNet50_Weights
 from torchvision.models import Inception_V3_Weights
 from torchvision.models import DenseNet121_Weights 
-import cv2
 from face_utils import get_image_files
 from img_store import ImgStore
 
@@ -19,11 +18,11 @@ MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
 IN_LABELS = "ilsvrc2012_wordnet_lemmas.txt"
 MODELS = {
-	"vgg16": models.vgg16(weights=VGG16_Weights.IMAGENET1K_V1),
+	# "vgg16": models.vgg16(weights=VGG16_Weights.IMAGENET1K_V1),
 	# "vgg19": models.vgg19(pretrained=True),
 	"inception": models.inception_v3(weights=Inception_V3_Weights.IMAGENET1K_V1),
-	"densenet": models.densenet121(weights=DenseNet121_Weights.IMAGENET1K_V1),
-	"resnet": models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+	# "densenet": models.densenet121(weights=DenseNet121_Weights.IMAGENET1K_V1),
+	# "resnet": models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
 }
 class ImageClassen:
     def __init__(self, pt_model, db_f):
@@ -54,11 +53,10 @@ class ImageClassen:
         image = cv2.imread(image_path)
         orig = image.copy()
         image = self.preprocess_image(image)
-        # convert the preprocessed image to a torch tensor and flash it to
-        # the current device
         image = torch.from_numpy(image)
         image = image.to(self.device)
         return image
+
 
     def classify(self, image_path):
         logits = self.model(self.load_image(image_path))
@@ -81,6 +79,13 @@ def main():
     pm = MODELS[sys.argv[1]]
     cn = ImageClassen(pm, sys.argv[3])
     for image_path in get_image_files(sys.argv[2]):
-        cn.classify(image_path)
+        if len(cn.store.find_image_path(image_path)) > 0:
+            print("ii dup "+image_path)
+        else:
+            try:
+                cn.classify(image_path)
+            except:
+                print("ii skip on error: %s" % image_path)
+                pass
 
 main()

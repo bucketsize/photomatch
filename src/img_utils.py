@@ -2,6 +2,8 @@ import glob
 import ssl
 import urllib.request
 import pprint
+import cv2
+import numpy as np
 from numpy import asarray
 from PIL import Image
 from matplotlib import pyplot as plt
@@ -37,6 +39,10 @@ def get_image_files(base_dir):
     for i in glob.iglob(base_dir+"/**/*.[jJ][pP][gG]", recursive=True):
         yield i
     for i in glob.iglob(base_dir+"/**/*.[jJ][pP][eE][gG]", recursive=True):
+        yield i
+    for i in glob.iglob(base_dir+"/**/*.[pP][nN][gG]", recursive=True):
+        yield i
+    for i in glob.iglob(base_dir+"/**/*.[wW][eE][bB][pP]", recursive=True):
         yield i
     
 def in_range(r, i):
@@ -78,4 +84,17 @@ def show_overlay(image, roi_boxes):
                             fill=False, color='red')
         ax.add_patch(roi_border)
     plt.show()
+
+def cv_to_torch(image):
+    # BGR -> RGB 
+    # CL -> CF
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = image.transpose((2, 0, 1))
+    
+    # batch dim
+    # scale 0..1
+    image = np.expand_dims(image, axis=0)
+    image = image / 255.0
+   
+    return image
 
