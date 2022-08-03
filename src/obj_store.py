@@ -53,11 +53,11 @@ class ObjStore:
                         image_id integer,
                         object_path text,
                         confidence real,
-                        object_box pt_tensor, 
-                        embedding pt_tensor,
                         tag_id integer,
                         tag_type text,
-                        tag text
+                        tag text,
+                        object_box pt_tensor, 
+                        embedding pt_tensor
             );
         ''')
         con.commit()
@@ -87,8 +87,12 @@ class ObjStore:
         self.cur.execute("insert into images values (?, ?, ?, ?, ?)", image)
         for fi in list(fs):
             obj_id = self.next_idx()
-            obj = (obj_id, image_id, fi[0], float(fi[2]), tensor(fi[1]), [],
-                   fi[4], fi[5], fi[6])
+            obj = (obj_id, image_id, fi[0], float(fi[2])
+                  , fi[4], fi[5], fi[6]
+                  , tensor(fi[1])
+                  , tensor([])
+                  )
+            # print(">>", obj)
             self.cur.execute("insert into objects values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                              obj)
         self.con.commit()

@@ -11,6 +11,9 @@ from torchvision import models
 from torchvision.models import detection
 from img_utils import get_image_files, cv_to_torch
 from obj_store import ObjStore
+import logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 CONFIDENCE = 0.55
 IN_LABELS = "coco_labels.txt"
@@ -58,16 +61,17 @@ class ObjPuller:
         print("ii %s" % image_path )
         image = self.load_image(image_path)
         detects = self.model(image)[0]
-        objs, ts = [], []
+        objs = []
         for i in range(0, len(detects["boxes"])): 
             confidence = detects["scores"][i]
             if confidence > CONFIDENCE:
-                idx = int(detects["labels"][i])-1
-                print(" - {:.2f}% {}".format(confidence * 100, self.tags[idx]))
+                tag_id = int(detects["labels"][i])-1
+                tag = self.tags[tag_id].strip()
+                print(" - {:.2f}% {}".format(confidence * 100, tag))
                 box = detects["boxes"][i].detach().cpu().numpy()
                 (startX, startY, endX, endY) = box.astype("int")
-                objs.append((None, [startX, startY, endX, endY], confidence, [], idx, "COCO", self.tags[idx]))
-        self.store.save_objects(image_path, objs, ts)
+                objs.append((None, box, confidence, [], tag_id, "COCO", tag))
+        self.store.save_objects(image_path, objs, [])
 
 def main():
     ap = argparse.ArgumentParser()
@@ -94,7 +98,8 @@ def main():
             try:
                 cn.pull(image_path)
             except Exception as e:
-                print("ii skip on error: %s" % image_path, e)
+                print("ii skip on error: %s" % image_path)
+                logger.exception(e)
                 pass
 
 main()
