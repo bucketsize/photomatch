@@ -36,18 +36,18 @@ MODELS = {
 }
 
 class ObjPuller:
-    def __init__(self, modeld, db_f):
+    def __init__(self, modeld, cf, db_f):
+        self.confidence = cf
         self.workers = 0 if os.name == 'nt' else 4
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         print('ii running on device: {}'.format(self.device))
         self.tags = dict(enumerate(open(IN_LABELS)))
-        print(modeld)
         pt_model = modeld["fn"](
             weights=modeld["wt"],
             weights_backbone=modeld["wt_b"],
             progress=True,
-            num_classes=len(self.tags),
-            pretrained_backbone=True)
+            num_classes=len(self.tags)
+            )
         self.model = pt_model.eval().to(self.device)
         self.store = ObjStore(db_f)
 
@@ -64,7 +64,7 @@ class ObjPuller:
         objs = []
         for i in range(0, len(detects["boxes"])): 
             confidence = detects["scores"][i]
-            if confidence > CONFIDENCE:
+            if confidence > self.confidence:
                 tag_id = int(detects["labels"][i])-1
                 tag = self.tags[tag_id].strip()
                 print(" - {:.2f}% {}".format(confidence * 100, tag))
@@ -90,7 +90,7 @@ def main():
         help="minimum probability to filter weak detections")
     args = vars(ap.parse_args())
     pm = MODELS[args["model"]]
-    cn = ObjPuller(pm, args["db"])
+    cn = ObjPuller(pm, args["confidence"], args["db"])
     for image_path in get_image_files(args["path"]):
         if len(cn.store.find_image_path(image_path)) > 0:
             print("ii dup "+image_path)
